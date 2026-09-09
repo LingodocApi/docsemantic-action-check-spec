@@ -1,0 +1,137 @@
+name: "DocSemantic Spec Check"
+description: "Fail your CI when your API responses drift from their OpenAPI/Postman contracts. Thin client for the hosted DocSemantic API."
+author: "DocSemantic"
+branding:
+  icon: "git-pull-request"
+  color: "purple"
+
+inputs:
+  api-key:
+    description: "DocSemantic API key (dsk_live_…). Store it as a repository secret and pass it here."
+    required: true
+  api-url:
+    description: "Base URL of the DocSemantic API. Only override for self-hosted/staging."
+    required: false
+    default: "https://docsemantic.com"
+  fail-on-drift:
+    description: "Fail the workflow step when drift is detected. Set to 'false' to report without failing the build."
+    required: false
+    default: "true"
+
+outputs:
+  passed:
+    description: "'true' when all checked specs are compliant, 'false' when drift was detected."
+    value: ${{ steps.check.outputs.passed }}
+  specs-checked:
+    description: "Number of specs evaluated."
+    value: ${{ steps.check.outputs.specs_checked }}
+  total-violations:
+    description: "Total number of drift violations across all specs."
+    value: ${{ steps.check.outputs.total_violations }}
+  summary:
+    description: "Human-readable summary of the check result."
+    value: ${{ steps.check.outputs.summary }}
+
+runs:
+  using: "composite"
+  steps:
+    - id: check
+      shell: bash
+      env:
+        DOCSEMANTIC_API_KEY: ${{ inputs.api-key }}
+        DOCSEMANTIC_API_URL: ${{ inputs.api-url }}
+        DOCSEMANTIC_FAIL_ON_DRIFT: ${{ inputs.fail-on-drift }}
+      run: |
+        set -euo pipefail
+
+        if [ -z "${DOCSEMANTIC_API_KEY:-}" ]; then
+          echo "::error title=DocSemantic::Missing 'api-key' input. Add your dsk_live_ key as a repository secret."
+          exit 1
+        fi
+
+        base_url="${DOCSEMANTIC_API_URL%/}"
+        endpoint="${base_url}/api/v1/check"
+
+        echo "Checking API contract drift via ${endpoint}"
+
+        # Thin HTTP client: call the hosted DocSemantic check endpoint.
+        # Body and HTTP status are captured separately so we can branch on both.
+        http_body="$(mktemp)"
+        http_code="$(
+          curl -sS -o "${http_body}" -w '%{http_code}' \
+            --max-time 60 \
+            -X POST "${endpoint}" \
+            -H "Authorization: Bearer ${DOCSEMANTIC_API_KEY}" \
+            -H "Content-Type: application/json" \
+            || echo "000"
+        )"
+
+        body="$(cat "${http_body}")"
+        rm -f "${http_body}"
+
+        # Network / DNS failure — curl never got an HTTP response.
+        if [ "${http_code}" = "000" ]; then
+          echo "::error title=DocSemantic::Could not reach ${endpoint}. Check the api-url and network access."
+          exit 1
+        fi
+
+        # Auth failure.
+        if [ "${http_code}" = "401" ]; then
+          echo "::error title=DocSemantic::API key rejected (401). Verify the 'api-key' secret is a valid dsk_live_ key."
+          exit 1
+        fi
+
+        # Rate limited.
+        if [ "${http_code}" = "429" ]; then
+          echo "::error title=DocSemantic::Rate limited (429). Try again shortly or reduce check frequency."
+          exit 1
+        fi
+
+        # Any other non-check status (5xx, unexpected).
+        if [ "${http_code}" != "200" ] && [ "${http_code}" != "422" ]; then
+          echo "::error title=DocSemantic::Unexpected response (${http_code}): ${body}"
+          exit 1
+        fi
+
+        # Parse the check payload. jq is preinstalled on GitHub-hosted runners.
+        passed="$(printf '%s' "${body}" | jq -r '.passed // false')"
+        specs_checked="$(printf '%s' "${body}" | jq -r '.specsChecked // 0')"
+        total_violations="$(printf '%s' "${body}" | jq -r '.totalViolations // 0')"
+        summary="$(printf '%s' "${body}" | jq -r '.summary // "No summary."')"
+
+        {
+          echo "passed=${passed}"
+          echo "specs_checked=${specs_checked}"
+          echo "total_violations=${total_violations}"
+          echo "summary=${summary}"
+        } >> "${GITHUB_OUTPUT}"
+
+        # Job summary panel.
+        {
+          echo "## DocSemantic Spec Check"
+          echo ""
+          if [ "${passed}" = "true" ]; then
+            echo "**Passed** — ${summary}"
+          else
+            echo "**Drift detected** — ${summary}"
+          fi
+          echo ""
+          echo "| Metric | Value |"
+          echo "| --- | --- |"
+          echo "| Specs checked | ${specs_checked} |"
+          echo "| Total violations | ${total_violations} |"
+        } >> "${GITHUB_STEP_SUMMARY}"
+
+        if [ "${passed}" = "true" ]; then
+          echo "::notice title=DocSemantic::${summary}"
+          exit 0
+        fi
+
+        # Drift detected.
+        if [ "${DOCSEMANTIC_FAIL_ON_DRIFT}" = "false" ]; then
+          echo "::warning title=DocSemantic::${summary} (fail-on-drift disabled — not failing the build)"
+          exit 0
+        fi
+
+        echo "::error title=DocSemantic::${summary}"
+        exit 1

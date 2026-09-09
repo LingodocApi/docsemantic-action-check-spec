@@ -1,0 +1,18 @@
+# Example consumer workflow.
+# Copy this into your own repo at .github/workflows/spec-check.yml
+name: API Contract Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  spec-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: DocSemantic Spec Check
+        uses: LingodocApi/docsemantic-action-check-spec@v1
+        with:
+          api-key: ${{ secrets.DOCSEMANTIC_API_KEY }}
+          # fail-on-drift: "false"   # uncomment to report without failing the build
