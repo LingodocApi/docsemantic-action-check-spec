@@ -1,0 +1,47 @@
+name: Action smoke test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate action.yml exists at root
+        run: test -f action.yml
+
+      - name: Validate action.yml is valid YAML
+        run: |
+          python3 -c "import yaml,sys; yaml.safe_load(open('action.yml'))" \
+            && echo "action.yml is valid YAML"
+
+      - name: Check required action.yml keys
+        run: |
+          python3 - <<'PY'
+          import yaml, sys
+          a = yaml.safe_load(open('action.yml'))
+          missing = [k for k in ('name', 'description', 'runs') if k not in a]
+          if missing:
+              print("Missing required keys:", missing); sys.exit(1)
+          if 'using' not in a['runs']:
+              print("runs.using missing"); sys.exit(1)
+          print("Required keys present. runs.using =", a['runs']['using'])
+          PY
+
+      - name: Check README exists
+        run: test -f README.md
+
+      - name: Check LICENSE exists
+        run: test -f LICENSE
+
+      - name: Lint workflow YAML files
+        run: |
+          for f in .github/workflows/*.yml; do
+            python3 -c "import yaml; yaml.safe_load(open('$f'))" \
+              && echo "OK: $f"
+          done
