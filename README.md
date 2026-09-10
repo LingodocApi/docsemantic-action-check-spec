@@ -1,5 +1,7 @@
 # DocSemantic Spec Check — GitHub Action
 
+[![GitHub Marketplace](https://img.shields.io/badge/Marketplace-DocSemantic%20Spec%20Check-2b3137?logo=github)](https://github.com/marketplace/actions/docsemantic-spec-check) [![Release](https://img.shields.io/github/v/release/LingodocApi/docsemantic-action-check-spec?sort=semver)](https://github.com/LingodocApi/docsemantic-action-check-spec/releases) [![License: MIT](https://img.shields.io/github/license/LingodocApi/docsemantic-action-check-spec)](./LICENSE)
+
 Fail your CI when your live API responses drift from their OpenAPI/Postman contracts.
 
 This Action is a **thin client** for the hosted DocSemantic API. It sends one authenticated
