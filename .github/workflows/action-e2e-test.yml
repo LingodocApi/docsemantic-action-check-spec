@@ -1,0 +1,18 @@
+name: Action e2e test
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 9 * * 1'
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run DocSemantic Spec Check (report-only)
+        uses: LingodocApi/docsemantic-action-check-spec@v1
+        with:
+          api-key: ${{ secrets.DOCSEMANTIC_API_KEY }}
+          fail-on-drift: "false"
