@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # This is a GitHub Action repo (action.yml + workflows), so GitHub Actions is
+  # the only ecosystem to keep updated (e.g. actions/checkout).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
